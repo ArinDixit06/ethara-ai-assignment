@@ -91,18 +91,22 @@ export class ReportsService {
   }
 
   async getLowStock() {
-    const products = await prisma.product.findMany({
-      where: {
-        currentStock: {
-          lte: prisma.product.fields.reorderThreshold,
-        },
-        isActive: true,
-      },
-      include: { category: true },
-      orderBy: { currentStock: 'asc' },
-    });
+    // Use raw SQL for column-to-column comparison (currentStock <= reorderThreshold)
+    const products = await prisma.$queryRaw<any[]>`
+      SELECT
+        p.*,
+        row_to_json(c.*) AS category
+      FROM "Product" p
+      LEFT JOIN "Category" c ON p."categoryId" = c.id
+      WHERE p."currentStock" <= p."reorderThreshold"
+        AND p."isActive" = true
+      ORDER BY p."currentStock" ASC
+    `;
 
-    return products;
+    return products.map((p: any) => ({
+      ...p,
+      category: typeof p.category === 'string' ? JSON.parse(p.category) : p.category,
+    }));
   }
 
   async getOrderSummary() {
@@ -167,15 +171,14 @@ export class ReportsService {
     const valuationRes = await this.getInventoryValuation();
     const totalInventoryValue = valuationRes.totalValuation;
 
-    // 3. Low stock count
-    const lowStockCount = await prisma.product.count({
-      where: {
-        currentStock: {
-          lte: prisma.product.fields.reorderThreshold,
-        },
-        isActive: true,
-      },
-    });
+    // 3. Low stock count — raw SQL for column-to-column comparison
+    const lowStockCountResult = await prisma.$queryRaw<[{ count: bigint }]>`
+      SELECT COUNT(*) AS count
+      FROM "Product"
+      WHERE "currentStock" <= "reorderThreshold"
+        AND "isActive" = true
+    `;
+    const lowStockCount = Number(lowStockCountResult[0].count);
 
     // 4. Pending orders count (CONFIRMED or SHIPPED status)
     const pendingOrdersCount = await prisma.order.count({

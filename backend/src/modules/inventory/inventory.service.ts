@@ -134,19 +134,24 @@ export class InventoryService {
   }
 
   async getLowStock() {
-    const lowStockProducts = await prisma.product.findMany({
-      where: {
-        currentStock: {
-          lte: prisma.product.fields.reorderThreshold,
-        },
-        isActive: true,
-      },
-      include: {
-        category: true,
-      },
-      orderBy: { currentStock: 'asc' },
-    });
-    return lowStockProducts;
+    // Use raw SQL for column-to-column comparison (currentStock <= reorderThreshold)
+    // Prisma's standard API only supports static value comparisons, not field references
+    const lowStockProducts = await prisma.$queryRaw<any[]>`
+      SELECT
+        p.*,
+        row_to_json(c.*) AS category
+      FROM "Product" p
+      LEFT JOIN "Category" c ON p."categoryId" = c.id
+      WHERE p."currentStock" <= p."reorderThreshold"
+        AND p."isActive" = true
+      ORDER BY p."currentStock" ASC
+    `;
+
+    // Parse category from raw JSON if needed
+    return lowStockProducts.map((p: any) => ({
+      ...p,
+      category: typeof p.category === 'string' ? JSON.parse(p.category) : p.category,
+    }));
   }
 
   async getValuation() {
