@@ -164,91 +164,103 @@ export class ReportsService {
   }
 
   async getDashboardStats() {
-    // 1. Total products
-    const totalProducts = await prisma.product.count({ where: { isActive: true } });
+    // Run all independent top-level queries in parallel for speed
+    const [
+      totalProducts,
+      lowStockCountResult,
+      pendingOrdersCount,
+      stockMovementRows,
+      categoryValueRows,
+      allProducts,
+    ] = await Promise.all([
+      // 1. Total active products
+      prisma.product.count({ where: { isActive: true } }),
 
-    // 2. Total inventory value
-    const valuationRes = await this.getInventoryValuation();
-    const totalInventoryValue = valuationRes.totalValuation;
+      // 2. Low stock count — raw SQL for column-to-column comparison
+      prisma.$queryRaw<[{ count: bigint }]>`
+        SELECT COUNT(*) AS count
+        FROM "Product"
+        WHERE "currentStock" <= "reorderThreshold"
+          AND "isActive" = true
+      `,
 
-    // 3. Low stock count — raw SQL for column-to-column comparison
-    const lowStockCountResult = await prisma.$queryRaw<[{ count: bigint }]>`
-      SELECT COUNT(*) AS count
-      FROM "Product"
-      WHERE "currentStock" <= "reorderThreshold"
-        AND "isActive" = true
-    `;
+      // 3. Pending orders count (CONFIRMED or SHIPPED)
+      prisma.order.count({
+        where: { status: { in: [OrderStatus.CONFIRMED, OrderStatus.SHIPPED] } },
+      }),
+
+      // 4. Stock movements last 7 days — single GROUP BY raw SQL (UTC-safe)
+      prisma.$queryRaw<{ day: string; type: string; total: bigint }[]>`
+        SELECT
+          TO_CHAR(DATE_TRUNC('day', "createdAt" AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS day,
+          "type",
+          SUM("quantity") AS total
+        FROM "StockMovement"
+        WHERE "createdAt" >= (NOW() AT TIME ZONE 'UTC' - INTERVAL '6 days')::date
+        GROUP BY day, "type"
+        ORDER BY day ASC
+      `,
+
+      // 5. Inventory value by category — raw SQL SUM to avoid Prisma Decimal coercion issues
+      prisma.$queryRaw<{ category: string; value: number }[]>`
+        SELECT
+          c."name" AS category,
+          COALESCE(SUM(p."currentStock" * p."costPrice"), 0)::float AS value
+        FROM "Category" c
+        LEFT JOIN "Product" p
+          ON p."categoryId" = c.id AND p."isActive" = true
+        GROUP BY c."name"
+        HAVING COALESCE(SUM(p."currentStock" * p."costPrice"), 0) > 0
+        ORDER BY value DESC
+      `,
+
+      // 6. All active products for total inventory value
+      prisma.product.findMany({
+        where: { isActive: true },
+        select: { currentStock: true, costPrice: true },
+      }),
+    ]);
+
+    // --- Compute total inventory value from fetched products ---
+    const totalInventoryValue = allProducts.reduce((acc, p) => {
+      return acc + p.currentStock * Number(p.costPrice);
+    }, 0);
+
     const lowStockCount = Number(lowStockCountResult[0].count);
 
-    // 4. Pending orders count (CONFIRMED or SHIPPED status)
-    const pendingOrdersCount = await prisma.order.count({
-      where: {
-        status: {
-          in: [OrderStatus.CONFIRMED, OrderStatus.SHIPPED],
-        },
-      },
-    });
+    // --- Build 7-day stock movements grid (fill missing days with 0) ---
+    // Create a map from raw SQL results: { 'YYYY-MM-DD': { inbound, outbound } }
+    const movementMap: Record<string, { inbound: number; outbound: number }> = {};
+    for (const row of stockMovementRows) {
+      if (!movementMap[row.day]) {
+        movementMap[row.day] = { inbound: 0, outbound: 0 };
+      }
+      if (row.type === 'INBOUND') {
+        movementMap[row.day].inbound += Number(row.total);
+      } else if (row.type === 'OUTBOUND') {
+        movementMap[row.day].outbound += Number(row.total);
+      }
+    }
 
-    // 5. Stock movements last 7 days (including today)
+    // Build full 7-day array including days with no movements
     const stockMovementsLast7Days = [];
     for (let i = 6; i >= 0; i--) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      date.setHours(0, 0, 0, 0);
-
-      const nextDay = new Date(date);
-      nextDay.setDate(nextDay.getDate() + 1);
-
-      const movements = await prisma.stockMovement.findMany({
-        where: {
-          createdAt: {
-            gte: date,
-            lt: nextDay,
-          },
-        },
-        select: {
-          type: true,
-          quantity: true,
-        },
-      });
-
-      let inbound = 0;
-      let outbound = 0;
-      movements.forEach((m) => {
-        if (m.type === MovementType.INBOUND) inbound += m.quantity;
-        else if (m.type === MovementType.OUTBOUND) outbound += m.quantity;
-      });
-
-      const dateString = date.toISOString().split('T')[0];
+      const d = new Date();
+      d.setUTCHours(0, 0, 0, 0);
+      d.setUTCDate(d.getUTCDate() - i);
+      const dateString = d.toISOString().split('T')[0];
       stockMovementsLast7Days.push({
         date: dateString,
-        inbound,
-        outbound,
+        inbound: movementMap[dateString]?.inbound ?? 0,
+        outbound: movementMap[dateString]?.outbound ?? 0,
       });
     }
 
-    // 6. Inventory value by category
-    const categories = await prisma.category.findMany({
-      include: {
-        products: {
-          where: { isActive: true },
-          select: {
-            currentStock: true,
-            costPrice: true,
-          },
-        },
-      },
-    });
-
-    const inventoryValueByCategory = categories
-      .map((c) => {
-        const value = c.products.reduce((sum, p) => sum + p.currentStock * Number(p.costPrice), 0);
-        return {
-          category: c.name,
-          value,
-        };
-      })
-      .filter((c) => c.value > 0);
+    // --- Category inventory: cast value to number ---
+    const inventoryValueByCategory = categoryValueRows.map((row) => ({
+      category: row.category,
+      value: Number(row.value),
+    }));
 
     return {
       totalProducts,
@@ -263,3 +275,4 @@ export class ReportsService {
 
 export const reportsService = new ReportsService();
 export default reportsService;
+
