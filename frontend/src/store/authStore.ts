@@ -1,6 +1,22 @@
 import { create } from 'zustand';
 import { User } from '../types/auth.types';
 
+const STORAGE_KEYS = {
+  token: 'auth_token',
+  user: 'auth_user',
+  expiry: 'auth_expiry',
+};
+
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+function clearAllStorage() {
+  Object.values(STORAGE_KEYS).forEach((key) => {
+    localStorage.removeItem(key);
+    sessionStorage.removeItem(key);
+  });
+}
+
 interface AuthState {
   user: User | null;
   token: string | null;
@@ -12,35 +28,56 @@ interface AuthState {
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   token: null,
+
   login: (user, token, rememberMe = true) => {
+    clearAllStorage();
+
     if (rememberMe) {
-      localStorage.setItem('auth_token', token);
-      localStorage.setItem('auth_user', JSON.stringify(user));
+      // Persist for 30 days in localStorage with an expiry timestamp
+      const expiry = Date.now() + THIRTY_DAYS_MS;
+      localStorage.setItem(STORAGE_KEYS.token, token);
+      localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(user));
+      localStorage.setItem(STORAGE_KEYS.expiry, String(expiry));
     } else {
-      sessionStorage.setItem('auth_token', token);
-      sessionStorage.setItem('auth_user', JSON.stringify(user));
+      // Session-only: cleared when browser closes; expiry = 1 day as a safety net
+      const expiry = Date.now() + ONE_DAY_MS;
+      sessionStorage.setItem(STORAGE_KEYS.token, token);
+      sessionStorage.setItem(STORAGE_KEYS.user, JSON.stringify(user));
+      sessionStorage.setItem(STORAGE_KEYS.expiry, String(expiry));
     }
+
     set({ user, token });
   },
+
   logout: () => {
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('auth_user');
-    sessionStorage.removeItem('auth_token');
-    sessionStorage.removeItem('auth_user');
+    clearAllStorage();
     set({ user: null, token: null });
   },
+
   initialize: () => {
-    const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
-    const userStr = localStorage.getItem('auth_user') || sessionStorage.getItem('auth_user');
-    if (token && userStr) {
+    // Check localStorage first (remember me), then sessionStorage (session only)
+    const storages = [localStorage, sessionStorage];
+
+    for (const storage of storages) {
+      const token = storage.getItem(STORAGE_KEYS.token);
+      const userStr = storage.getItem(STORAGE_KEYS.user);
+      const expiryStr = storage.getItem(STORAGE_KEYS.expiry);
+
+      if (!token || !userStr) continue;
+
+      // Check expiry — if missing or past, clear and skip
+      const expiry = expiryStr ? Number(expiryStr) : 0;
+      if (!expiry || Date.now() > expiry) {
+        clearAllStorage();
+        continue;
+      }
+
       try {
         const user = JSON.parse(userStr);
         set({ user, token });
-      } catch (e) {
-        localStorage.removeItem('auth_token');
-        localStorage.removeItem('auth_user');
-        sessionStorage.removeItem('auth_token');
-        sessionStorage.removeItem('auth_user');
+        return; // Found a valid session, stop looking
+      } catch {
+        clearAllStorage();
       }
     }
   },

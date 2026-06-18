@@ -56,14 +56,18 @@ export class AuthService {
       throw new ApiError(401, 'Invalid email or password');
     }
 
+    // Issue a 30-day token when "Remember Me" is checked, otherwise 1 day
+    const expiresIn = input.rememberMe ? '30d' : '1d';
+
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role },
       env.JWT_SECRET,
-      { expiresIn: env.JWT_EXPIRES_IN as any }
+      { expiresIn: expiresIn as any }
     );
 
     return {
       token,
+      expiresIn,
       user: {
         id: user.id,
         name: user.name,
@@ -72,6 +76,7 @@ export class AuthService {
       },
     };
   }
+
 
   async getProfile(userId: string) {
     const user = await prisma.user.findUnique({

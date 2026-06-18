@@ -23,6 +23,7 @@ import {
   PieChart,
   Pie,
   Cell,
+  Label,
 } from 'recharts';
 import reportsApi from '../../api/reports.api';
 import inventoryApi from '../../api/inventory.api';
@@ -218,52 +219,80 @@ export const DashboardPage: React.FC = () => {
             <h4 className="text-sm font-semibold">Category Inventory</h4>
             <p className="text-xs text-muted-foreground">Proportional cost breakdown of categories</p>
           </div>
-          <div className="h-72 w-full flex-1 relative flex items-center justify-center">
+          <div className="h-72 w-full flex-1">
             {stats.inventoryValueByCategory.length === 0 ? (
               <p className="text-xs text-muted-foreground text-center">No inventory valuation records found.</p>
             ) : (
-              <>
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={stats.inventoryValueByCategory}
-                      dataKey="value"
-                      nameKey="category"
-                      cx="50%"
-                      cy="46%"
-                      innerRadius={60}
-                      outerRadius={80}
-                      paddingAngle={3}
-                    >
-                      {stats.inventoryValueByCategory.map((_: any, index: number) => (
-                        <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: '#1e293b',
-                        border: '1px solid rgba(71, 85, 105, 0.5)',
-                        borderRadius: '8px',
-                        color: '#fff',
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={stats.inventoryValueByCategory}
+                    dataKey="value"
+                    nameKey="category"
+                    cx="40%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={3}
+                  >
+                    {stats.inventoryValueByCategory.map((_: any, index: number) => (
+                      <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                    ))}
+                    {/* Center label rendered by Recharts — always stays inside the donut */}
+                    <Label
+                      content={({ viewBox }: any) => {
+                        const { cx, cy } = viewBox;
+                        return (
+                          <g>
+                            <text
+                              x={cx}
+                              y={cy - 6}
+                              textAnchor="middle"
+                              dominantBaseline="middle"
+                              className="fill-foreground"
+                              style={{ fontSize: '20px', fontWeight: 700 }}
+                            >
+                              {stats.totalProducts}
+                            </text>
+                            <text
+                              x={cx}
+                              y={cy + 14}
+                              textAnchor="middle"
+                              dominantBaseline="middle"
+                              style={{ fontSize: '9px', fontWeight: 700, fill: '#94a3b8', letterSpacing: '0.08em', textTransform: 'uppercase' }}
+                            >
+                              SKUs
+                            </text>
+                          </g>
+                        );
                       }}
-                      formatter={(val) => formatCurrency(Number(val))}
                     />
-                    <Legend
-                      iconSize={8}
-                      iconType="circle"
-                      layout="horizontal"
-                      verticalAlign="bottom"
-                      align="center"
-                      wrapperStyle={{ fontSize: '10px', paddingTop: '5px' }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-                {/* Center text inside donut chart */}
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none" style={{ top: '-15px' }}>
-                  <span className="text-xl font-bold text-slate-900">{stats.totalProducts}</span>
-                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">SKUs</span>
-                </div>
-              </>
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#1e293b',
+                      border: '1px solid rgba(71, 85, 105, 0.5)',
+                      borderRadius: '8px',
+                      color: '#fff',
+                    }}
+                    formatter={(val) => formatCurrency(Number(val))}
+                  />
+                  {/* Vertical legend on the right — each category gets its own row, no overlap */}
+                  <Legend
+                    iconSize={8}
+                    iconType="circle"
+                    layout="vertical"
+                    verticalAlign="middle"
+                    align="right"
+                    wrapperStyle={{ fontSize: '10px', lineHeight: '20px', paddingLeft: '8px', maxWidth: '38%' }}
+                    formatter={(value: string) => (
+                      <span style={{ color: 'var(--muted-foreground, #94a3b8)', fontSize: '10px' }}>
+                        {value.length > 14 ? value.slice(0, 13) + '…' : value}
+                      </span>
+                    )}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
             )}
           </div>
         </div>

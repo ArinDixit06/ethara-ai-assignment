@@ -50,6 +50,7 @@ export const LoginPage: React.FC = () => {
       const response = await authApi.login({
         email: values.email,
         password: values.password,
+        rememberMe: values.rememberMe,
       });
       
       login(response.user, response.token, values.rememberMe);
