@@ -1,0 +1,162 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  STAFF
+}
+
+enum OrderType {
+  PURCHASE
+  SALES
+}
+
+enum OrderStatus {
+  DRAFT
+  CONFIRMED
+  SHIPPED
+  RECEIVED
+  FULFILLED
+  CANCELLED
+}
+
+enum MovementType {
+  INBOUND
+  OUTBOUND
+  ADJUSTMENT
+}
+
+model User {
+  id            String    @id @default(uuid())
+  name          String
+  email         String    @unique
+  passwordHash  String
+  role          Role      @default(STAFF)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  orders        Order[]
+  movements     StockMovement[]
+}
+
+model Category {
+  id        String    @id @default(uuid())
+  name      String    @unique
+  products  Product[]
+  createdAt DateTime  @default(now())
+}
+
+model Supplier {
+  id            String    @id @default(uuid())
+  name          String
+  contactPerson String?
+  email         String?
+  phone         String?
+  address       String?
+  paymentTerms  String?
+  notes         String?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  products      ProductSupplier[]
+  orders        Order[]
+}
+
+model Product {
+  id               String    @id @default(uuid())
+  name             String
+  sku              String    @unique
+  categoryId       String?
+  category         Category? @relation(fields: [categoryId], references: [id])
+  description      String?
+  unitPrice        Decimal   @default(0) @db.Decimal(12, 2)
+  costPrice        Decimal   @default(0) @db.Decimal(12, 2)
+  unitOfMeasure    String    @default("pcs")
+  reorderThreshold Int       @default(10)
+  currentStock     Int       @default(0)
+  imageUrl         String?
+  isActive         Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  suppliers        ProductSupplier[]
+  movements        StockMovement[]
+  orderLineItems   OrderLineItem[]
+}
+
+model ProductSupplier {
+  productId   String
+  supplierId  String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  supplier    Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@id([productId, supplierId])
+}
+
+model StockMovement {
+  id            String       @id @default(uuid())
+  productId     String
+  product       Product      @relation(fields: [productId], references: [id])
+  type          MovementType
+  quantity      Int
+  previousStock Int
+  newStock      Int
+  reason        String
+  referenceId   String?      // Order ID if triggered by order
+  notes         String?
+  createdById   String
+  createdBy     User         @relation(fields: [createdById], references: [id])
+  createdAt     DateTime     @default(now())
+}
+
+model Order {
+  id              String      @id @default(uuid())
+  orderNumber     String      @unique
+  type            OrderType
+  status          OrderStatus @default(DRAFT)
+  supplierId      String?
+  supplier        Supplier?   @relation(fields: [supplierId], references: [id])
+  customerName    String?
+  customerContact String?
+  notes           String?
+  totalAmount     Decimal     @default(0) @db.Decimal(12, 2)
+  expectedDate    DateTime?
+  createdById     String
+  createdBy       User        @relation(fields: [createdById], references: [id])
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  lineItems       OrderLineItem[]
+  statusHistory   OrderStatusHistory[]
+}
+
+model OrderLineItem {
+  id        String  @id @default(uuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+  quantity  Int
+  unitPrice Decimal @db.Decimal(12, 2)
+  subtotal  Decimal @db.Decimal(12, 2)
+}
+
+model OrderStatusHistory {
+  id        String      @id @default(uuid())
+  orderId   String
+  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status    OrderStatus
+  notes     String?
+  createdAt DateTime    @default(now())
+}

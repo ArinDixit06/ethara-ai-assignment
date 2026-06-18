@@ -1,0 +1,11 @@
+node_modules
+dist
+.env
+.env.test
+*.log
+npm-debug.log*
+.DS_Store
+coverage
+.nyc_output
+uploads
+prisma/migrations/migration_lock.toml

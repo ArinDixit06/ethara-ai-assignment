@@ -1,0 +1,16 @@
+# Ignore node_modules and builds at all levels
+node_modules/
+dist/
+
+# Ignore environment variables files
+
+.env.local
+.env.production
+.env.test
+.env.*.local
+
+# OS and logs
+*.log
+.DS_Store
+.vscode/
+.idea/

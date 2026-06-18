@@ -1,0 +1,26 @@
+# Dependency directories
+node_modules/
+
+# Build outputs
+dist/
+
+# Env files (do NOT commit to git)
+
+.env.local
+.env.*.local
+.env.test
+.env.production
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Test uploads
+uploads-test/
+uploads/
+
+# OS/IDE files
+.DS_Store
+.vscode/
+.idea/

@@ -1,0 +1,22 @@
+version: '3.8'
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "5000:5000"
+    environment:
+      DATABASE_URL: postgresql://neondb_owner:npg_NY4ntygCT9ZM@ep-winter-leaf-aos35n4f.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require
+      JWT_SECRET: supersecretjwtkey_min32chars_changemeinprod
+      NODE_ENV: production
+    volumes:
+      - uploads:/app/uploads
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  uploads:
