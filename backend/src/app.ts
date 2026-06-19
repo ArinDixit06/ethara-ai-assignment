@@ -71,6 +71,15 @@ app.use('/api/inventory', inventoryRouter);
 app.use('/api/orders', ordersRouter);
 app.use('/api/reports', reportsRouter);
 
+// Health check endpoint – used by the GitHub Actions keep-alive workflow
+app.get('/api/health', (_req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // Fallback 404 handler
 app.use((req, _res, next) => {
   next(new ApiError(404, `API endpoint not found: ${req.method} ${req.url}`));
