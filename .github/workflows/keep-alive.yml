@@ -3,9 +3,6 @@
 #
 # Keeps the Render (free-tier) backend alive by pinging its /api/health
 # endpoint every 14 minutes between 09:00 and 19:00 IST (03:30–13:30 UTC).
-#
-# Required GitHub Secret:
-#   RENDER_BACKEND_URL  →  e.g.  https://your-app.onrender.com
 # ──────────────────────────────────────────────────────────────────────────────
 name: 🔔 Keep Server Alive (IST 09:00 – 19:00)
 
@@ -13,12 +10,10 @@ on:
   schedule:
     # Runs every 14 minutes within the IST window.
     # IST = UTC + 05:30  →  09:00 IST = 03:30 UTC  |  19:00 IST = 13:30 UTC
-    #
-    # Cron fields: minute  hour  day  month  weekday
-    - cron: '30-59/14 3 * * *'    # 03:30, 03:44, 03:58  UTC
-    - cron: '0-30/14  4 * * *'    # 04:00 … 04:28         UTC
+    - cron: '30-59/14 3 * * *'                      # 03:30, 03:44, 03:58 UTC
+    - cron: '0-28/14  4 * * *'                      # 04:00, 04:14, 04:28 UTC
     - cron: '0,14,28,42,56 5,6,7,8,9,10,11,12 * * *'  # 05:00 – 12:56 UTC
-    - cron: '0,14,28 13 * * *'    # 13:00, 13:14, 13:28   UTC
+    - cron: '0,14,28 13 * * *'                      # 13:00, 13:14, 13:28 UTC
 
   # Allow manual trigger for testing
   workflow_dispatch:
@@ -31,15 +26,8 @@ jobs:
 
     steps:
       - name: 🏓 Ping /api/health
-        env:
-          BACKEND_URL: ${{ secrets.RENDER_BACKEND_URL }}
         run: |
-          if [ -z "$BACKEND_URL" ]; then
-            echo "❌  RENDER_BACKEND_URL secret is not set. Skipping ping."
-            exit 1
-          fi
-
-          HEALTH_URL="${BACKEND_URL%/}/api/health"
+          HEALTH_URL="https://ethara-ai-assignment-1v12.onrender.com/api/health"
           echo "📡 Pinging: $HEALTH_URL"
 
           HTTP_STATUS=$(curl --silent --output /dev/null \
@@ -54,7 +42,7 @@ jobs:
           if [[ "$HTTP_STATUS" -ge 200 && "$HTTP_STATUS" -lt 400 ]]; then
             echo "✅ Server is alive (HTTP $HTTP_STATUS)"
           else
-            echo "⚠️  Server returned HTTP $HTTP_STATUS – it may be starting up."
-            # Don't fail the job; Render needs up to 60 s to cold-start.
+            echo "⚠️  Server returned HTTP $HTTP_STATUS – it may be cold-starting (up to 60s on free plans)."
             exit 0
           fi
+
